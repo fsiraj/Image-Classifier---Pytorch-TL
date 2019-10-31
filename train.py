@@ -4,6 +4,7 @@ from torchvision import datasets, transforms, models
 from collections import OrderedDict
 import time
 import argparse
+from tqdm import tqdm
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -174,7 +175,10 @@ def train_model(arch, epochs, learnrate, hidden_units):
     # Set model to training mode. (Dropout layer is ON)
     model.train()
     for e in range(epochs):
-        for images, labels in dataloaders["train"]:
+        print("")
+        for images, labels in tqdm(dataloaders["train"], desc=f"Epoch {e+1:2}/{epochs}",
+                                   unit="images", unit_scale=64):
+
             train_count += 1
             # Clears gradients and moves data to slected device
             optimizer.zero_grad()
@@ -200,7 +204,8 @@ def train_model(arch, epochs, learnrate, hidden_units):
 
             # Turns off gradients to speed up loop
             with torch.no_grad():
-                for images, labels in dataloaders["valid"]:
+                for images, labels in tqdm(dataloaders["valid"], desc="Validation",
+                                           unit="images", unit_scale=64, leave=False):
                     valid_count += 1
 
                     # Moves data to selected device
@@ -220,14 +225,10 @@ def train_model(arch, epochs, learnrate, hidden_units):
 
 
             # Prints statistics
-            print(f"\nEpoch {e+1}/{epochs}")
-            time_elapsed = time.time() - start
-            print(f"Time Elapsed: {time_elapsed//60:.0f}m {time_elapsed % 60:.0f}s\n")
-
-            print(f"    Train Loss:      {batch_loss/train_count:.3f}")
-            print(f"    Validation Loss: {valid_loss/valid_count:.3f}")
-            print(f"    Accuracy:        {accuracy/valid_count*100:.1f}%")
-
+            print("")
+            print(f"Train Loss:    : {batch_loss/train_count:.3f}")
+            print(f"Validation Loss: {valid_loss/valid_count:.3f}")
+            print(f"Accuracy       : {accuracy/valid_count*100:.1f}%")
             # Resets newtwork to train mode and error metrics
             train_count = 0
             batch_loss = 0
