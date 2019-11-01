@@ -108,6 +108,37 @@ def data_loader(data_dir):
 
     return data_transforms, image_datasets, dataloaders
 
+def model_loader(arch, hidden_units):
+    '''Loads in model, freezes feature parameters and redefines classifier.
+       Choose between vgg and densenet.'''
+
+    # Model selection
+    if arch.lower()=="densenet":
+        model = models.densenet201(pretrained=True)
+        in_features = model.classifier.in_features
+    elif arch.lower()=="vgg":
+        model = models.vgg19_bn(pretrained=True)
+        in_features = model.classifier[0].in_features
+
+    # Freezes model parameters in feature/convolutional layers
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Redefines the classifier which whill be trained
+    classes = len(image_datasets["train"].classes)
+    model.classifier = nn.Sequential(OrderedDict([
+        ("fc1", nn.Linear(in_features, hidden_units)),
+        ("relu1", nn.ReLU()),
+        ("dropout", nn.Dropout(p=0.2)),
+        ("fc2", nn.Linear(hidden_units, classes)),
+        ("out", nn.LogSoftmax(dim=1))
+        ]))
+
+    print(f"{arch.upper()} network initialized...")
+    
+    return model
+
+
 def save_checkpoint(filepath, architecture, classifier, epochs, lr,
                     model_state_dict, optimizer_state_dict, hidden_units,
                     class_to_idx):
@@ -130,31 +161,9 @@ def save_checkpoint(filepath, architecture, classifier, epochs, lr,
 
     print(f"Checkpoint saved at {filepath}.")
 
-def train_model(arch, epochs, learnrate, hidden_units):
+def train_model(model, epochs, learnrate):
     '''Training loop for model. Model can have 1 hidden layer with
        hidden_units nodes'''
-
-    # Model selection
-    if arch.lower()=="densenet":
-        model = models.densenet201(pretrained=True)
-        in_features = model.classifier.in_features
-    if arch.lower()=="vgg":
-        model = models.vgg19_bn(pretrained=True)
-        in_features = model.classifier[0].in_features
-
-    # Freezes model parameters in feature/convolutional layers
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Redefines the classifier which whill be trained
-    classes = len(image_datasets["train"].classes)
-    model.classifier = nn.Sequential(OrderedDict([
-        ("fc1", nn.Linear(in_features, hidden_units)),
-        ("relu1", nn.ReLU()),
-        ("dropout", nn.Dropout(p=0.2)),
-        ("fc2", nn.Linear(hidden_units, classes)),
-        ("out", nn.LogSoftmax(dim=1))
-        ]))
 
     # Network initial setup
     batch_loss = 0
@@ -168,8 +177,6 @@ def train_model(arch, epochs, learnrate, hidden_units):
     model.to(device)
 
     start = time.time()
-    print(f"{arch.upper()} network initialized...")
-
     # Initialize training loop
 
     # Set model to training mode. (Dropout layer is ON)
@@ -252,5 +259,7 @@ if __name__ == '__main__':
     device = device_selection()
     # Loads datasets as training, vcalidation, and testing sub-sets
     data_transforms, image_datasets, dataloaders = data_loader(args.data_dir)
+    # Loads in model
+    model = model_loader(args.arch, args.hidden_units)
     # Trains model
-    train_model(args.arch, args.epochs, args.learning_rate, args.hidden_units)
+    train_model(model, args.epochs, args.learning_rate)
