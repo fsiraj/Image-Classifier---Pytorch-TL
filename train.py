@@ -1,6 +1,8 @@
 import torch
 from torch import nn, optim
 from torchvision import datasets, transforms, models
+
+import numpy as np
 from collections import OrderedDict
 import time
 import argparse
@@ -135,7 +137,7 @@ def model_loader(arch, hidden_units):
         ]))
 
     print(f"{arch.upper()} network initialized...")
-    
+
     return model
 
 
@@ -168,29 +170,24 @@ def train_model(model, epochs, learnrate):
     # Network initial setup
     batch_loss = 0
     train_count = 0
-
+    save_loss = np.inf
     ## Defines optimizer and error function
     criterion = nn.NLLLoss()
     optimizer = optim.Adam(model.classifier.parameters(), lr=learnrate)
-
     # Moves model to selected device
     model.to(device)
-
     start = time.time()
     # Initialize training loop
-
     # Set model to training mode. (Dropout layer is ON)
     model.train()
     for e in range(epochs):
         print("")
         for images, labels in tqdm(dataloaders["train"], desc=f"Epoch {e+1:2}/{epochs}",
                                    unit="images", unit_scale=64):
-
             train_count += 1
             # Clears gradients and moves data to slected device
             optimizer.zero_grad()
             images, labels = images.to(device), labels.to(device)
-
             # Forwardpass
             logps = model(images)
             loss = criterion(logps, labels)
@@ -205,31 +202,42 @@ def train_model(model, epochs, learnrate):
             accuracy = 0
             valid_count = 0
             valid_loss = 0
-
             # Sets model to evaluation mode (Dropout layer is OFF)
             model.eval()
-
             # Turns off gradients to speed up loop
             with torch.no_grad():
                 for images, labels in tqdm(dataloaders["valid"], desc="Validation",
                                            unit="images", unit_scale=64, leave=False):
                     valid_count += 1
-
                     # Moves data to selected device
                     images, labels = images.to(device), labels.to(device)
-
                     # Forwardpass
                     logps = model(images)
                     # Error accumulation
                     loss = criterion(logps, labels)
                     valid_loss += loss.item()
-
                     # Accuracy measure
                     ps = torch.exp(logps)
                     mode_p, mode_class = ps.topk(1, dim=1)
                     equality = mode_class == labels.view(*mode_class.shape)
                     accuracy += torch.mean(equality.type(torch.FloatTensor)).item()
 
+            # Saves checkpoint
+            if args.check_dir and (valid_loss/valid_count) < save_loss:
+                model_state_dict = model.state_dict()
+                optimizer_state_dict = optimizer.state_dict()
+                save_checkpoint(args.check_dir,
+                                args.arch.lower(),
+                                model.classifier,
+                                epochs, learnrate,
+                                model_state_dict,
+                                optimizer_state_dict,
+                                args.hidden_units,
+                                image_datasets['train'].class_to_idx)
+                print(f"Validation Loss decreased: {save_loss:.3f} ---> {valid_loss/valid_count:.3f}.",
+                      f"Saving model.")
+
+                save_loss = valid_loss/valid_count
 
             # Prints statistics
             print("")
@@ -244,13 +252,6 @@ def train_model(model, epochs, learnrate):
     #Network runtime
     running_time = time.time() - start
     print(f"\nRunning Time: {running_time//60:.0f}m {running_time % 60:.0f}s")
-
-    if args.check_dir:
-        model_state_dict = model.state_dict()
-        optimizer_state_dict = optimizer.state_dict()
-        save_checkpoint(args.check_dir, arch.lower(), model.classifier, epochs,
-                        learnrate, model_state_dict, optimizer_state_dict,
-                        hidden_units, image_datasets['train'].class_to_idx)
 
 if __name__ == '__main__':
     # Store user inputs from command line into args as attributes
